@@ -730,7 +730,7 @@ function endNavigation() {
 
   navPanel.style.display = 'none';
   viewModePanel.style.display = 'flex';
-  speakTTS('Спасибо за использование ParkEasy.'); // Завершение навигации
+  speakTTS('Спасибо за использование EasyPark.'); // Завершение навигации
 }
 
 /** Маркер пользователя */
