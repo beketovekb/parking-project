@@ -1,6 +1,5 @@
 <?php
 session_start();
-// Если нужна защита, можно проверять авторизацию
 // if (!isset($_SESSION['user_id'])) {
 //   http_response_code(401);
 //   echo json_encode(["error" => "Unauthorized"]);
@@ -9,18 +8,21 @@ session_start();
 
 require_once '../db/config.php';
 
+header('Content-Type: application/json; charset=utf-8');
+
 try {
-    // Пример: выбираем все записи
     $sql = "SELECT camera_name, coords, spot_id, is_busy
-            FROM camera_spots
-            ORDER BY camera_name, spot_id";
+              FROM camera_spots
+          ORDER BY camera_name, spot_id";
     $stmt = $pdo->query($sql);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Группируем по coords (пример)
+    // Группируем по coords
     $grouped = [];
     foreach ($rows as $row) {
-        $coords = $row['coords'];
+        $coords = $row['coords'] ?? '';
+        if (!$coords) continue;
+
         if (!isset($grouped[$coords])) {
             $grouped[$coords] = [
                 'coords' => $coords,
@@ -45,10 +47,9 @@ try {
         $item['free'] = $freeCount;
     }
 
-    // Превращаем ассоциативный массив в индексированный
+    // Делать array_values, чтобы ключи были индексными
     $data = array_values($grouped);
 
-    header('Content-Type: application/json; charset=utf-8');
     echo json_encode($data);
 
 } catch (PDOException $e) {

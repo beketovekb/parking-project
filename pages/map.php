@@ -1,8 +1,20 @@
+<?php
+session_start();
+
+// Если страница только для авторизованных пользователей
+if (!isset($_SESSION['user_id'])) {
+    header('Location: login.php');
+    exit();
+}
+
+// Ключ (можно подгружать из .env)
+$gmapsKey = "AIzaSyDjB46uCIzzBxbQEhfdsggoXmDybRdlnNA";
+?>
 <!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <title>ParkEasy - Ограничение Поиска Городом</title>
+  <title>EasyPark</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
 
   <!-- Bootstrap CSS -->
@@ -13,22 +25,26 @@
 
   <style>
     html, body {
-      width: 100%; height: 100%;
-      margin: 0; padding: 0;
+      width: 100%; 
+      height: 100%;
+      margin: 0; 
+      padding: 0;
       overflow: hidden;
       font-family: sans-serif;
     }
     #map {
       position: absolute;
-      top: 0; left: 0;
+      top: 0; 
+      left: 0;
       width: 100%; 
       height: 100%;
     }
 
-    /* Нижняя панель (поля ввода) */
+    /* Панель ввода (откуда/куда) */
     .bottom-panel {
       position: absolute;
-      bottom: 0; left: 0;
+      bottom: 0; 
+      left: 0;
       width: 100%;
       background-color: rgba(255,255,255,0.9);
       padding: 16px;
@@ -38,7 +54,7 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
-      z-index: 1000; /* чтобы находиться выше карты */
+      z-index: 1000; 
     }
     .mobile-input {
       width: 100%;
@@ -57,29 +73,42 @@
       cursor: pointer;
     }
 
-    /* Панель навигации (шаги) */
-    .nav-panel {
+    /* Панель подтверждения маршрута */
+    .route-panel {
       position: absolute;
-      bottom: 0; left: 0;
+      bottom: 0;
+      left: 0;
       width: 100%;
-      max-height: 40%;
       background-color: rgba(255,255,255,0.95);
       padding: 16px;
       box-shadow: 0 -2px 8px rgba(0,0,0,0.2);
       border-top-left-radius: 16px;
       border-top-right-radius: 16px;
-      overflow-y: auto;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 1500;
+    }
+
+    /* Панель навигации (один шаг) */
+    .nav-panel {
+      position: absolute;
+      bottom: 0; 
+      left: 0;
+      width: 100%;
+      background-color: rgba(255,255,255,0.95);
+      padding: 16px;
+      box-shadow: 0 -2px 8px rgba(0,0,0,0.2);
+      border-top-left-radius: 16px;
+      border-top-right-radius: 16px;
       display: none;
       z-index: 2000; 
-    }
-    .nav-step {
-      margin-bottom: 12px;
     }
 
     /* Кнопка GPS */
     .gps-button {
       position: absolute;
-      bottom: 320px; /* Выше панели */
+      bottom: 320px; 
       right: 16px;
       z-index: 9999;
       width: 48px; 
@@ -94,10 +123,11 @@
       cursor: pointer;
     }
     .gps-button img {
-      width: 24px; height: 24px;
+      width: 24px; 
+      height: 24px;
     }
 
-    /* Модалка: квадратики */
+    /* Квадратики в модалке (парковки) */
     .spot-square {
       width: 30px; 
       height: 30px;
@@ -116,7 +146,7 @@
       background-color: green;
     }
 
-    /* Лого (при желании) */
+    /* Лого */
     .logo {
       width: 80px; 
       height: auto;
@@ -127,15 +157,14 @@
 </head>
 <body>
 
-<!-- Карта -->
 <div id="map"></div>
 
-<!-- Кнопка GPS (записать адрес в "Откуда") -->
+<!-- Кнопка GPS -->
 <button class="gps-button" id="gpsBtn">
   <img src="../assets/images/location.png" alt="GPS" />
 </button>
 
-<!-- Панель ввода (по умолчанию) -->
+<!-- Панель ввода (откуда/куда) -->
 <div class="bottom-panel" id="viewModePanel">
   <img src="../assets/images/logo.svg" class="logo" alt="ParkEasy Logo" />
 
@@ -151,15 +180,22 @@
     class="mobile-input"
     placeholder="Куда..."
   />
-  <button class="main-button" id="routeBtn">Поехали</button>
+  <button class="main-button" id="routeBtn">Построить маршрут</button>
 </div>
 
-<!-- Панель навигации (шаги) -->
+<!-- Панель подтверждения маршрута (Поехали / Отмена) -->
+<div class="route-panel" id="confirmRoutePanel">
+  <div class="mb-2" id="routeSummary"></div>
+  <div class="d-flex justify-content-between">
+    <button class="btn btn-secondary w-50 me-2" id="cancelRouteBtn">Отмена</button>
+    <button class="btn btn-primary w-50" id="startNavBtn">Поехали</button>
+  </div>
+</div>
+
+<!-- Панель навигации (один шаг) -->
 <div class="nav-panel" id="navPanel">
-  <div id="navSteps"></div>
-  <button class="btn btn-danger w-100 mt-2" id="endNavBtn">
-    Завершить
-  </button>
+  <div id="currentStepArea" class="mb-2"></div>
+  <button class="btn btn-danger w-100 mt-2" id="endNavBtn">Завершить</button>
 </div>
 
 <!-- Модальное окно (детали парковки) -->
@@ -170,16 +206,10 @@
         <h5 class="modal-title" id="spotsModalTitle">Детали парковки</h5>
         <button type="button" class="btn btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
       </div>
-      <div class="modal-body" id="spotsModalBody">
-        <!-- Квадратики -->
-      </div>
+      <div class="modal-body" id="spotsModalBody"></div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-success" id="goHereBtn">
-          Доехать сюда
-        </button>
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-          Закрыть
-        </button>
+        <button type="button" class="btn btn-success" id="goHereBtn">Доехать сюда</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
       </div>
     </div>
   </div>
@@ -190,57 +220,59 @@
   src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js">
 </script>
 
-<!-- Google Maps (с вашим ключом) -->
-<script
-  src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDjB46uCIzzBxbQEhfdsggoXmDybRdlnNA&libraries=places,geometry&callback=initMap"
+<script>
+  const gmapsKey = "<?= htmlspecialchars($gmapsKey) ?>";
+</script>
+<script 
+  src="https://maps.googleapis.com/maps/api/js?key=<?= urlencode($gmapsKey) ?>&libraries=places,geometry&callback=initMap"
   async
   defer
 ></script>
 
 <script>
-// ======== Глобальные переменные ========
+// ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
 let map;
 let directionsService, directionsRenderer;
 let fromAutocomplete, toAutocomplete;
-let markers = [];       // для кружков парковок
-let watchId = null;     // ID watchPosition
-let userMarker = null;  // маркер "машины" (пользователя)
+let markers = [];  
+let watchId = null;     
+let userMarker = null;  
 let currentSteps = [];  
 let currentStepIndex = 0;
+let lastRouteResult = null;   // последний построенный маршрут
+let finalDestination = null;  // LatLng, куда в итоге нужно доехать (конечная точка)
 
-// DOM-ссылки
 const viewModePanel = document.getElementById('viewModePanel');
+const confirmRoutePanel = document.getElementById('confirmRoutePanel');
 const navPanel      = document.getElementById('navPanel');
-const navStepsDiv   = document.getElementById('navSteps');
 
-// Координаты парковки (модалка)
-let currentParkingLat = null, currentParkingLng = null;
+const routeSummary  = document.getElementById('routeSummary');
+const currentStepArea = document.getElementById('currentStepArea');
 
-/** Инициализация карты */
+let currentParkingLat = null;
+let currentParkingLng = null;
+
+/** ИниЦИализация карты */
 function initMap() {
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
-      async (pos) => {
+      async pos => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
         await createMap(lat, lng);
-        // После создания карты и автокомплита - ограничим поиск городом
         await limitAutocompleteToCurrentCity(lat, lng);
       },
-      async (err) => {
+      async err => {
         console.warn('Geo denied, fallback: Moscow');
         await createMap(55.7522, 37.6156);
-        // При желании можно ограничить Москвой:
-        // await limitAutocompleteToCityByName("Москва");
       }
     );
   } else {
     createMap(55.7522, 37.6156);
-    // limitAutocompleteToCityByName("Москва");
   }
 }
 
-/** Создание карты и основных объектов */
+/** Создание карты */
 async function createMap(lat, lng) {
   map = new google.maps.Map(document.getElementById('map'), {
     center: { lat, lng },
@@ -254,71 +286,55 @@ async function createMap(lat, lng) {
   });
   directionsRenderer.setMap(map);
 
-  // Автокомплит
   fromAutocomplete = new google.maps.places.Autocomplete(
     document.getElementById('fromInput')
   );
-  toAutocomplete   = new google.maps.places.Autocomplete(
+  toAutocomplete = new google.maps.places.Autocomplete(
     document.getElementById('toInput')
   );
 
-  // События
   document.getElementById('routeBtn').addEventListener('click', buildRoute);
+  document.getElementById('cancelRouteBtn').addEventListener('click', cancelRoute);
+  document.getElementById('startNavBtn').addEventListener('click', startNavigation);
   document.getElementById('endNavBtn').addEventListener('click', endNavigation);
-  document.getElementById('goHereBtn').addEventListener('click', buildRouteToParking);
   document.getElementById('gpsBtn').addEventListener('click', setFromCurrentLocation);
+  document.getElementById('goHereBtn').addEventListener('click', buildRouteToParking);
 
-  // Маркер пользователя
   placeUserMarker(lat, lng);
 
-  // Загружаем парковки
   loadParkings();
   setInterval(loadParkings, 5000);
 }
 
-/** Ограничить автокомплит городом пользователя */
+/** Ограничить автокомплит */
 async function limitAutocompleteToCurrentCity(lat, lng) {
   try {
-    // 1) Reverse Geocode, ищем locality
-    const revUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=AIzaSyDjB46uCIzzBxbQEhfdsggoXmDybRdlnNA`;
+    const revUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${encodeURIComponent(gmapsKey)}`;
     const revResp = await fetch(revUrl);
     const revData = await revResp.json();
-    if (revData.status!=='OK' || !revData.results.length) {
-      console.warn('Не удалось определить город');
-      return;
-    }
+    if (revData.status !== 'OK' || !revData.results.length) return;
 
     let cityName = null;
     outer:
     for (const result of revData.results) {
       for (const comp of result.address_components) {
         if (comp.types.includes('locality')) {
-          cityName = comp.long_name; 
+          cityName = comp.long_name;
           break outer;
         }
       }
     }
-    if (!cityName) {
-      console.warn('Город не найден');
-      return;
-    }
+    if (!cityName) return;
 
-    // 2) Forward Geocode
-    const fwdUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(cityName)}&key=AIzaSyDjB46uCIzzBxbQEhfdsggoXmDybRdlnNA`;
+    const fwdUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(cityName)}&key=${encodeURIComponent(gmapsKey)}`;
     const fwdResp = await fetch(fwdUrl);
     const fwdData = await fwdResp.json();
-    if (fwdData.status!=='OK' || !fwdData.results.length) {
-      console.warn('Не удалось получить границы города');
-      return;
-    }
+    if (fwdData.status !== 'OK' || !fwdData.results.length) return;
 
     const cityResult = fwdData.results[0];
-    if (!cityResult.geometry.bounds) {
-      console.warn('У города нет geometry.bounds');
-      return;
-    }
+    if (!cityResult.geometry.bounds) return;
 
-    const b = cityResult.geometry.bounds; 
+    const b = cityResult.geometry.bounds;
     const cityBounds = new google.maps.LatLngBounds(
       new google.maps.LatLng(b.southwest.lat, b.southwest.lng),
       new google.maps.LatLng(b.northeast.lat, b.northeast.lng)
@@ -329,19 +345,18 @@ async function limitAutocompleteToCurrentCity(lat, lng) {
     toAutocomplete.setBounds(cityBounds);
     toAutocomplete.setOptions({ strictBounds: true });
 
-    console.log('Autocomplete ограничен границами города:', cityName);
   } catch(e) {
     console.error(e);
   }
 }
 
-/** Загрузка парковок (каждые 5 сек) */
+/** Загрузка парковок */
 async function loadParkings() {
   try {
     const resp = await fetch('get_data.php');
     if (!resp.ok) throw new Error('Ошибка сети при загрузке парковок');
     const data = await resp.json();
-    // data = [{ coords, spots, total, free }, ...]
+    // [{ coords, spots, total, free }, ...]
 
     markers.forEach(m => m.setMap(null));
     markers = [];
@@ -350,18 +365,18 @@ async function loadParkings() {
       const { coords, spots, total, free } = item;
       if (!coords) return;
       const parts = coords.split(',');
-      if (parts.length<2) return;
+      if (parts.length < 2) return;
       const lat = parseFloat(parts[0]);
       const lng = parseFloat(parts[1]);
-      if (isNaN(lat)||isNaN(lng)) return;
+      if (isNaN(lat) || isNaN(lng)) return;
 
       const icon = {
         path: google.maps.SymbolPath.CIRCLE,
-        fillColor: free>0?'#28a745':'#dc3545',
-        fillOpacity:1,
-        strokeColor:'#fff',
-        strokeWeight:2,
-        scale:20
+        fillColor: free > 0 ? '#28a745' : '#dc3545',
+        fillOpacity: 1,
+        strokeColor: '#fff',
+        strokeWeight: 2,
+        scale: 20
       };
       const label = {
         text: String(free),
@@ -370,14 +385,14 @@ async function loadParkings() {
         fontWeight: 'bold'
       };
 
-      let marker = new google.maps.Marker({
+      const marker = new google.maps.Marker({
         position: { lat, lng },
         map,
         icon,
         label
       });
 
-      marker.addListener('click', ()=>{
+      marker.addListener('click', () => {
         openParkingModal(spots, free, total, lat, lng);
       });
       markers.push(marker);
@@ -387,50 +402,44 @@ async function loadParkings() {
   }
 }
 
-/** Модалка с деталями */
+/** Модалка */
 function openParkingModal(spots, free, total, lat, lng) {
   currentParkingLat = lat;
   currentParkingLng = lng;
-  document.getElementById('spotsModalTitle').textContent =
-    `Свободно: ${free} из ${total}`;
-
+  document.getElementById('spotsModalTitle').textContent = `Свободно: ${free} из ${total}`;
+  
   let squares = '';
   spots.forEach(s => {
     const cssClass = s.is_busy ? 'busy' : 'free';
     squares += `<div class="spot-square ${cssClass}">${s.spot_id}</div>`;
   });
   document.getElementById('spotsModalBody').innerHTML = `
-    <div style="display:flex; flex-wrap:wrap;max-width:300px;">
+    <div style="display:flex; flex-wrap:wrap; max-width:300px;">
       ${squares}
     </div>
   `;
-  
   const modalEl = document.getElementById('spotsModal');
   const modal = new bootstrap.Modal(modalEl, {});
   modal.show();
 }
 
-/** «Доехать сюда» */
+/** Доехать сюда */
 function buildRouteToParking() {
   if (!currentParkingLat || !currentParkingLng) {
     alert('Нет координат парковки');
     return;
   }
-  // Закрываем модалку
   const modalEl = document.getElementById('spotsModal');
   const modal = bootstrap.Modal.getInstance(modalEl);
   modal.hide();
 
-  // origin = userMarker
-  const origin = userMarker
-    ? userMarker.getPosition()
-    : map.getCenter();
-  const destination = new google.maps.LatLng(currentParkingLat, currentParkingLng);
+  const origin = userMarker ? userMarker.getPosition() : map.getCenter();
+  const dest = new google.maps.LatLng(currentParkingLat, currentParkingLng);
 
-  buildRouteFromTo(origin, destination);
+  buildRouteFromTo(origin, dest);
 }
 
-/** Кнопка «Поехали» */
+/** Построить маршрут */
 function buildRoute() {
   const fromPlace = fromAutocomplete.getPlace();
   const toPlace   = toAutocomplete.getPlace();
@@ -439,84 +448,183 @@ function buildRoute() {
     alert('Укажите «Куда»');
     return;
   }
+
   let origin;
   if (fromPlace && fromPlace.geometry) {
     origin = fromPlace.geometry.location;
   } else {
-    origin = userMarker
-      ? userMarker.getPosition()
-      : map.getCenter();
+    origin = userMarker ? userMarker.getPosition() : map.getCenter();
   }
   const destination = toPlace.geometry.location;
-  
   buildRouteFromTo(origin, destination);
 }
 
-/** Строим маршрут + «самодельная навигация» */
+/** Собственно запрос к Directions API */
 function buildRouteFromTo(origin, destination) {
   directionsService.route({
     origin,
     destination,
     travelMode: google.maps.TravelMode.DRIVING
-  }, (response, status)=>{
-    if (status==='OK') {
+  }, (response, status) => {
+    if (status === 'OK') {
+      lastRouteResult = response;
       directionsRenderer.setDirections(response);
-      startNavigation(response);
+
+      // Запоминаем конечную точку
+      const route = response.routes[0];
+      const leg = route.legs[0];
+      if (leg) {
+        finalDestination = leg.end_location;
+      }
+      showConfirmRoute(response);
     } else {
-      alert('Не удалось построить маршрут: '+status);
+      alert('Не удалось построить маршрут: ' + status);
     }
   });
 }
 
-/** Начинаем навигацию */
-function startNavigation(response) {
+/** Показываем панель подтверждения */
+function showConfirmRoute(response) {
   viewModePanel.style.display = 'none';
-  navPanel.style.display      = 'block';
-  navStepsDiv.innerHTML='';
+  navPanel.style.display = 'none';
+  confirmRoutePanel.style.display = 'flex';
+
+  const leg = response.routes[0].legs[0];
+  if (leg) {
+    routeSummary.innerHTML = `
+      <p>Маршрут: <b>${leg.distance.text}</b>, ~ <b>${leg.duration.text}</b></p>
+    `;
+  } else {
+    routeSummary.innerHTML = `<p>Маршрут построен</p>`;
+  }
+}
+
+/** Кнопка "Отмена" */
+function cancelRoute() {
+  confirmRoutePanel.style.display = 'none';
+  directionsRenderer.set('directions', null);
+  lastRouteResult = null;
+  finalDestination = null;
+  viewModePanel.style.display = 'flex';
+}
+
+/** "Поехали" */
+function startNavigation() {
+  if (!lastRouteResult) {
+    alert('Нет построенного маршрута');
+    return;
+  }
+  confirmRoutePanel.style.display = 'none';
+  doStartNavigation(lastRouteResult);
+}
+
+/** Начинаем навигацию (только 1 шаг показываем) */
+function doStartNavigation(response) {
+  navPanel.style.display = 'block';
 
   const route = response.routes[0];
   const leg   = route.legs[0];
   if (!leg) {
-    navStepsDiv.innerHTML='<p>Нет шагов</p>';
+    currentStepArea.innerHTML = 'Нет шагов';
     return;
   }
-  currentSteps = leg.steps;
+
+  currentSteps     = leg.steps;
   currentStepIndex = 0;
+  showCurrentStep(); // показываем первый шаг
 
-  let html='';
-  currentSteps.forEach((step,i)=>{
-    html+=`
-      <div class="nav-step">
-        <b>Шаг ${i+1}:</b> ${step.html_instructions}
-        <small>(${step.distance.text})</small>
-      </div>
-    `;
-  });
-  navStepsDiv.innerHTML=html;
-
+  // Запускаем watchPosition
   if (watchId) {
     navigator.geolocation.clearWatch(watchId);
-    watchId=null;
+    watchId = null;
   }
   if (navigator.geolocation) {
     watchId = navigator.geolocation.watchPosition(
       pos => {
-        const lat=pos.coords.latitude;
-        const lng=pos.coords.longitude;
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
         placeUserMarker(lat, lng);
+        map.setCenter({ lat, lng });
+
+        checkIfOffRoute(lat, lng);
         checkIfStepDone(lat, lng);
       },
-      err => {
-        console.warn('watchPosition error', err);
-      },
-      { enableHighAccuracy:true, timeout:10000 }
+      err => console.warn(err),
+      { enableHighAccuracy: true, timeout: 10000 }
     );
   }
 }
 
+/** Отображаем текущий шаг */
+function showCurrentStep() {
+  if (currentStepIndex >= currentSteps.length) {
+    currentStepArea.innerHTML = 'Маршрут пройден';
+    return;
+  }
+  const step = currentSteps[currentStepIndex];
+  const instructionText = step.html_instructions || step.instructions || '';
+  currentStepArea.innerHTML = `
+    <div>
+      <h5>Шаг ${currentStepIndex+1} из ${currentSteps.length}</h5>
+      <div>${instructionText}</div>
+      <small>Расстояние: ${step.distance.text}</small>
+    </div>
+  `;
+}
+
+/** Проверяем, не отклонился ли пользователь от маршрута */
+function checkIfOffRoute(lat, lng) {
+  if (currentStepIndex >= currentSteps.length) return;
+
+  // Допустим, берём start_location следующего шага
+  const step = currentSteps[currentStepIndex];
+  const startLoc = step.start_location;
+  const dist = google.maps.geometry.spherical.computeDistanceBetween(
+    new google.maps.LatLng(lat, lng),
+    startLoc
+  );
+  // Если > 50 метров, считаем, что пользователь ушёл
+  if (dist > 50) {
+    console.log('Пользователь отклонился, перестраиваем маршрут');
+    recalcRoute(lat, lng);
+  }
+}
+
+/** Перестраиваем маршрут c текущей позиции до finalDestination */
+function recalcRoute(lat, lng) {
+  if (!finalDestination) {
+    // Если не знаем конечную точку, просто завершаем
+    endNavigation();
+    return;
+  }
+  // Останавливаем watchPosition на время перестроения, чтобы не вызвать гонку
+  if (watchId) {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+  }
+
+  directionsService.route({
+    origin: { lat, lng },
+    destination: finalDestination,
+    travelMode: google.maps.TravelMode.DRIVING
+  }, (response, status) => {
+    if (status === 'OK') {
+      console.log('Маршрут перестроен');
+      lastRouteResult = response;
+      directionsRenderer.setDirections(response);
+
+      // Запускаем заново навигацию c нового маршрута
+      doStartNavigation(response);
+    } else {
+      alert('Не удалось перестроить маршрут: ' + status);
+      endNavigation();
+    }
+  });
+}
+
 /** Проверяем, не завершён ли шаг */
 function checkIfStepDone(lat, lng) {
-  if (currentStepIndex>=currentSteps.length) {
+  if (currentStepIndex >= currentSteps.length) {
     endNavigation();
     return;
   }
@@ -526,10 +634,14 @@ function checkIfStepDone(lat, lng) {
     new google.maps.LatLng(lat, lng),
     endLoc
   );
-  if (dist<30) {
+  if (dist < 30) {
     currentStepIndex++;
-    if (currentStepIndex>=currentSteps.length) {
+    if (currentStepIndex >= currentSteps.length) {
+      // Все шаги пройдены, завершаем
       endNavigation();
+    } else {
+      // Переходим к следующему шагу
+      showCurrentStep();
     }
   }
 }
@@ -538,14 +650,16 @@ function checkIfStepDone(lat, lng) {
 function endNavigation() {
   if (watchId) {
     navigator.geolocation.clearWatch(watchId);
-    watchId=null;
+    watchId = null;
   }
   directionsRenderer.set('directions', null);
-  currentSteps=[];
-  currentStepIndex=0;
+  currentSteps = [];
+  currentStepIndex = 0;
+  lastRouteResult  = null;
+  finalDestination = null;
 
-  navPanel.style.display='none';
-  viewModePanel.style.display='flex';
+  navPanel.style.display = 'none';
+  viewModePanel.style.display = 'flex';
 }
 
 /** Маркер пользователя */
@@ -571,30 +685,28 @@ function placeUserMarker(lat, lng) {
 /** Кнопка GPS */
 async function setFromCurrentLocation() {
   if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(async (pos)=>{
-      const lat=pos.coords.latitude;
-      const lng=pos.coords.longitude;
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
 
       map.setCenter({ lat, lng });
       map.setZoom(18);
+      placeUserMarker(lat, lng);
 
-      placeUserMarker(lat,lng);
-
-      // Обратное геокодирование
-      const address=await reverseGeocode(lat,lng);
-      document.getElementById('fromInput').value = address ||
-        `${lat.toFixed(5)},${lng.toFixed(5)}`;
+      const address = await reverseGeocode(lat, lng);
+      document.getElementById('fromInput').value = address 
+        || `${lat.toFixed(5)},${lng.toFixed(5)}`;
     });
   }
 }
 
 /** Обратное геокодирование */
 async function reverseGeocode(lat, lng) {
-  const url=`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=AIzaSyDjB46uCIzzBxbQEhfdsggoXmDybRdlnNA`;
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${encodeURIComponent(gmapsKey)}`;
   try {
-    const resp=await fetch(url);
-    const data=await resp.json();
-    if (data.status==='OK' && data.results.length>0) {
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (data.status === 'OK' && data.results.length > 0) {
       return data.results[0].formatted_address;
     }
   } catch(e) {
